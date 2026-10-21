@@ -43,6 +43,7 @@ typedef ptrdiff_t GLsizeiptr;
 #define GL_TRIANGLES 0x0004
 #define GL_LINES 0x0001
 #define GL_STATIC_DRAW 0x88E4
+#define GL_DYNAMIC_DRAW 0x88E8
 #define GL_ARRAY_BUFFER 0x8892
 #define GL_FRAGMENT_SHADER 0x8B30
 #define GL_VERTEX_SHADER 0x8B31
@@ -51,11 +52,17 @@ typedef ptrdiff_t GLsizeiptr;
 #define GL_FLOAT 0x1406
 #define GL_FALSE 0
 
+#define GL_BLEND 0x0BE2
+#define GL_SRC_ALPHA 0x0302
+#define GL_ONE_MINUS_SRC_ALPHA 0x0303
+
 int gladLoadGLLoader(GLADloadproc load);
 
 typedef void (APIENTRYP PFNGLCLEARPROC) (GLbitfield mask);
 typedef void (APIENTRYP PFNGLCLEARCOLORPROC) (GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha);
 typedef void (APIENTRYP PFNGLENABLEPROC) (GLenum cap);
+typedef void (APIENTRYP PFNGLDISABLEPROC) (GLenum cap);
+typedef void (APIENTRYP PFNGLBLENDFUNCPROC) (GLenum sfactor, GLenum dfactor);
 typedef void (APIENTRYP PFNGLVIEWPORTPROC) (GLint x, GLint y, GLsizei width, GLsizei height);
 typedef GLuint (APIENTRYP PFNGLCREATESHADERPROC) (GLenum type);
 typedef void (APIENTRYP PFNGLSHADERSOURCEPROC) (GLuint shader, GLsizei count, const GLchar *const*string, const GLint *length);
@@ -79,6 +86,8 @@ typedef void (APIENTRYP PFNGLENABLEVERTEXATTRIBARRAYPROC) (GLuint index);
 typedef void (APIENTRYP PFNGLDRAWARRAYSPROC) (GLenum mode, GLint first, GLsizei count);
 typedef GLint (APIENTRYP PFNGLGETUNIFORMLOCATIONPROC) (GLuint program, const GLchar *name);
 typedef void (APIENTRYP PFNGLUNIFORMMATRIX4FVPROC) (GLint location, GLsizei count, GLboolean transpose, const GLfloat *value);
+typedef void (APIENTRYP PFNGLUNIFORM2FVPROC) (GLint location, GLsizei count, const GLfloat *value);
+typedef void (APIENTRYP PFNGLLINEWIDTHPROC) (GLfloat width);
 typedef void (APIENTRYP PFNGLDELETEVERTEXARRAYSPROC) (GLsizei n, const GLuint *arrays);
 typedef void (APIENTRYP PFNGLDELETEBUFFERSPROC) (GLsizei n, const GLuint *buffers);
 typedef void (APIENTRYP PFNGLDELETEPROGRAMPROC) (GLuint program);
@@ -86,6 +95,8 @@ typedef void (APIENTRYP PFNGLDELETEPROGRAMPROC) (GLuint program);
 extern PFNGLCLEARPROC glad_glClear;
 extern PFNGLCLEARCOLORPROC glad_glClearColor;
 extern PFNGLENABLEPROC glad_glEnable;
+extern PFNGLDISABLEPROC glad_glDisable;
+extern PFNGLBLENDFUNCPROC glad_glBlendFunc;
 extern PFNGLVIEWPORTPROC glad_glViewport;
 extern PFNGLCREATESHADERPROC glad_glCreateShader;
 extern PFNGLSHADERSOURCEPROC glad_glShaderSource;
@@ -109,6 +120,8 @@ extern PFNGLENABLEVERTEXATTRIBARRAYPROC glad_glEnableVertexAttribArray;
 extern PFNGLDRAWARRAYSPROC glad_glDrawArrays;
 extern PFNGLGETUNIFORMLOCATIONPROC glad_glGetUniformLocation;
 extern PFNGLUNIFORMMATRIX4FVPROC glad_glUniformMatrix4fv;
+extern PFNGLUNIFORM2FVPROC glad_glUniform2fv;
+extern PFNGLLINEWIDTHPROC glad_glLineWidth;
 extern PFNGLDELETEVERTEXARRAYSPROC glad_glDeleteVertexArrays;
 extern PFNGLDELETEBUFFERSPROC glad_glDeleteBuffers;
 extern PFNGLDELETEPROGRAMPROC glad_glDeleteProgram;
@@ -116,6 +129,8 @@ extern PFNGLDELETEPROGRAMPROC glad_glDeleteProgram;
 #define glClear glad_glClear
 #define glClearColor glad_glClearColor
 #define glEnable glad_glEnable
+#define glDisable glad_glDisable
+#define glBlendFunc glad_glBlendFunc
 #define glViewport glad_glViewport
 #define glCreateShader glad_glCreateShader
 #define glShaderSource glad_glShaderSource
@@ -139,6 +154,8 @@ extern PFNGLDELETEPROGRAMPROC glad_glDeleteProgram;
 #define glDrawArrays glad_glDrawArrays
 #define glGetUniformLocation glad_glGetUniformLocation
 #define glUniformMatrix4fv glad_glUniformMatrix4fv
+#define glUniform2fv glad_glUniform2fv
+#define glLineWidth glad_glLineWidth
 #define glDeleteVertexArrays glad_glDeleteVertexArrays
 #define glDeleteBuffers glad_glDeleteBuffers
 #define glDeleteProgram glad_glDeleteProgram

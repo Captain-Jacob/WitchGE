@@ -11,28 +11,41 @@
 #include <vector>
 #include <algorithm>
 #include <string>
+#include <cstdlib>
 
 const unsigned int SCR_WIDTH = 1280;
 const unsigned int SCR_HEIGHT = 720;
 
-// --- Player & Movement State Machine ---
+// --- Player Physics State ---
 struct Player {
     glm::vec3 position = glm::vec3(0.0f, 0.0f, 0.0f);
     glm::vec3 velocity = glm::vec3(0.0f, 0.0f, 0.0f);
     
-    float cameraHeight = 1.6f;       // Smoothly lerps during crouch
+    float cameraHeight = 1.6f;
     bool isGrounded = true;
     bool isCrouching = false;
     
-    // Physics Parameters
     const float MAX_GROUND_SPEED = 8.0f;
     const float MAX_CROUCH_SPEED = 4.0f;
     const float GROUND_ACCEL     = 14.0f;
     const float GROUND_FRICTION  = 6.0f;
-    const float AIR_ACCEL        = 45.0f;  // Quake/Source strafe accel
+    const float AIR_ACCEL        = 45.0f;
     const float JUMP_IMPULSE     = 6.5f;
     const float GRAVITY          = 20.0f;
 } player;
+
+// --- Canvas & UI State ---
+struct CanvasState {
+    bool isOpen = false;
+    float slideAnim = 0.0f;
+    bool isDrawing = false;
+    
+    std::vector<std::vector<glm::vec2>> strokes;
+    std::vector<glm::vec2> currentStroke;
+    
+    glm::vec2 shakeOffset = glm::vec2(0.0f);
+    glm::vec2 currentTotalOffset = glm::vec2(0.0f); // Screen to Canvas Local offset
+} canvas;
 
 // --- Camera Look State ---
 glm::vec3 cameraFront = glm::vec3(0.0f, -0.2f, -1.0f);
@@ -48,7 +61,6 @@ bool firstMouse = true;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-// Callbacks
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
 }
@@ -56,6 +68,15 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
 void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
     float xpos = static_cast<float>(xposIn);
     float ypos = static_cast<float>(yposIn);
+
+    if (canvas.isOpen) {
+        if (canvas.isDrawing) {
+            // Subtract canvas offset so stroke points are recorded in Canvas Local Space
+            glm::vec2 localPos = glm::vec2(xpos, ypos) - canvas.currentTotalOffset;
+            canvas.currentStroke.push_back(localPos);
+        }
+        return;
+    }
 
     if (firstMouse) {
         lastX = xpos;
@@ -85,7 +106,47 @@ void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
     cameraFront = glm::normalize(front);
 }
 
-// --- Movement Physics Helper Functions ---
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+    if (!canvas.isOpen) return;
+
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        if (action == GLFW_PRESS) {
+            canvas.isDrawing = true;
+            canvas.currentStroke.clear();
+            double xpos, ypos;
+            glfwGetCursorPos(window, &xpos, &ypos);
+            glm::vec2 localPos = glm::vec2(static_cast<float>(xpos), static_cast<float>(ypos)) - canvas.currentTotalOffset;
+            canvas.currentStroke.push_back(localPos);
+        } else if (action == GLFW_RELEASE) {
+            if (canvas.isDrawing) {
+                canvas.isDrawing = false;
+                if (!canvas.currentStroke.empty()) {
+                    canvas.strokes.push_back(canvas.currentStroke);
+                    canvas.currentStroke.clear();
+                }
+            }
+        }
+    }
+}
+
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    if (action == GLFW_PRESS) {
+        if (key == GLFW_KEY_J || key == GLFW_KEY_P) {
+            if (canvas.isOpen) {
+                std::cout << "[SPELL] Casted gesture with " << canvas.strokes.size() << " strokes!" << std::endl;
+                canvas.strokes.clear();
+                canvas.currentStroke.clear();
+                canvas.isOpen = false;
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                firstMouse = true;
+            } else {
+                canvas.isOpen = true;
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            }
+        }
+    }
+}
+
 void ApplyFriction(float dt) {
     float speed = glm::length(glm::vec2(player.velocity.x, player.velocity.z));
     if (speed < 0.0001f) {
@@ -110,12 +171,10 @@ void Accelerate(glm::vec3 wishdir, float wishspeed, float accel, float dt) {
 }
 
 void UpdatePlayerPhysics(GLFWwindow* window, float dt) {
-    // 1. Crouch State (C Key)
     player.isCrouching = (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS);
     float targetCameraHeight = player.isCrouching ? 0.8f : 1.6f;
     player.cameraHeight = glm::mix(player.cameraHeight, targetCameraHeight, 12.0f * dt);
 
-    // 2. Input Wish Direction Matrix
     glm::vec3 forward = glm::normalize(glm::vec3(cameraFront.x, 0.0f, cameraFront.z));
     glm::vec3 right = glm::normalize(glm::cross(forward, cameraUp));
     
@@ -131,28 +190,23 @@ void UpdatePlayerPhysics(GLFWwindow* window, float dt) {
 
     float targetMaxSpeed = player.isCrouching ? player.MAX_CROUCH_SPEED : player.MAX_GROUND_SPEED;
 
-    // 3. Ground vs Air Physics Pipeline
     if (player.isGrounded) {
         ApplyFriction(dt);
         if (glm::length(wishdir) > 0.001f) {
             Accelerate(wishdir, targetMaxSpeed, player.GROUND_ACCEL, dt);
         }
         
-        // Jump Impulse
         if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
             player.velocity.y = player.JUMP_IMPULSE;
             player.isGrounded = false;
         }
     } else {
-        // Air Movement (Air Acceleration allows Bunny Hopping speed gain)
         if (glm::length(wishdir) > 0.001f) {
             Accelerate(wishdir, targetMaxSpeed, player.AIR_ACCEL, dt);
         }
-        // Apply Gravity
         player.velocity.y -= player.GRAVITY * dt;
     }
 
-    // 4. Integrate Position & Ground Collision
     player.position += player.velocity * dt;
 
     if (player.position.y <= 0.0f) {
@@ -233,6 +287,8 @@ int main() {
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
+    glfwSetMouseButtonCallback(window, mouse_button_callback);
+    glfwSetKeyCallback(window, key_callback);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
@@ -240,11 +296,9 @@ int main() {
         return -1;
     }
 
-    glEnable(GL_DEPTH_TEST);
+    GLuint shader3D = createShaderProgram("shaders/vertex.glsl", "shaders/fragment.glsl");
+    GLuint shaderUI = createShaderProgram("shaders/ui_vertex.glsl", "shaders/ui_fragment.glsl");
 
-    GLuint shaderProgram = createShaderProgram("shaders/vertex.glsl", "shaders/fragment.glsl");
-
-    // 3D Grid Floor
     std::vector<float> gridVertices;
     float gridSize = 60.0f;
     float gridStep = 2.0f;
@@ -256,27 +310,56 @@ int main() {
         gridVertices.insert(gridVertices.end(), { i, 0.0f,  gridSize,  0.3f, 0.35f, 0.4f });
     }
 
-    GLuint VAO, VBO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
+    GLuint VAO3D, VBO3D;
+    glGenVertexArrays(1, &VAO3D);
+    glGenBuffers(1, &VBO3D);
 
-    glBindVertexArray(VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBindVertexArray(VAO3D);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO3D);
     glBufferData(GL_ARRAY_BUFFER, gridVertices.size() * sizeof(float), gridVertices.data(), GL_STATIC_DRAW);
 
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
+    float panelHeight = 450.0f;
+    std::vector<float> panelVertices = {
+        0.0f,            SCR_HEIGHT - panelHeight, 0.95f, 0.95f, 0.95f, 0.92f,
+        (float)SCR_WIDTH, SCR_HEIGHT - panelHeight, 0.95f, 0.95f, 0.95f, 0.92f,
+        0.0f,            (float)SCR_HEIGHT,       0.95f, 0.95f, 0.95f, 0.92f,
+
+        0.0f,            (float)SCR_HEIGHT,       0.95f, 0.95f, 0.95f, 0.92f,
+        (float)SCR_WIDTH, SCR_HEIGHT - panelHeight, 0.95f, 0.95f, 0.95f, 0.92f,
+        (float)SCR_WIDTH, (float)SCR_HEIGHT,       0.95f, 0.95f, 0.95f, 0.92f,
+    };
+
+    GLuint VAOUI, VBOUI;
+    glGenVertexArrays(1, &VAOUI);
+    glGenBuffers(1, &VBOUI);
+
+    glBindVertexArray(VAOUI);
+    glBindBuffer(GL_ARRAY_BUFFER, VBOUI);
+    glBufferData(GL_ARRAY_BUFFER, panelVertices.size() * sizeof(float), panelVertices.data(), GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    GLuint VAOLines, VBOLines;
+    glGenVertexArrays(1, &VAOLines);
+    glGenBuffers(1, &VBOLines);
+
+    glBindVertexArray(VAOLines);
+    glBindBuffer(GL_ARRAY_BUFFER, VBOLines);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
     std::cout << "==================================================" << std::endl;
-    std::cout << "🚀 Phase 2 Initialized: 3D Bunny Hop & Crouch Engine" << std::endl;
-    std::cout << "Controls:" << std::endl;
-    std::cout << "  - WASD : Move / Strafe" << std::endl;
-    std::cout << "  - SPACE : Jump (Time jumps while turning to Bunny Hop!)" << std::endl;
-    std::cout << "  - C     : Crouch" << std::endl;
-    std::cout << "  - ESC   : Exit" << std::endl;
+    std::cout << "🚀 Phase 3 Updated: Deformable Drawing & Shake Engine" << std::endl;
     std::cout << "==================================================" << std::endl;
 
     while (!glfwWindowShouldClose(window)) {
@@ -287,44 +370,105 @@ int main() {
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
 
-        // Update Physics
         UpdatePlayerPhysics(window, deltaTime);
 
-        // Update Title Bar with Horizontal Speed & FPS Metrics
+        float targetSlide = canvas.isOpen ? 1.0f : 0.0f;
+        canvas.slideAnim = glm::mix(canvas.slideAnim, targetSlide, 12.0f * deltaTime);
+
         float horizSpeed = glm::length(glm::vec2(player.velocity.x, player.velocity.z));
+        canvas.shakeOffset = glm::vec2(0.0f);
+        
+        if (canvas.slideAnim > 0.01f && horizSpeed > 0.8f) {
+            float intensity = std::min((horizSpeed - 0.8f) * 3.5f, 35.0f);
+            canvas.shakeOffset.x = ((rand() % 2000 - 1000) / 1000.0f) * intensity;
+            canvas.shakeOffset.y = ((rand() % 2000 - 1000) / 1000.0f) * intensity;
+        }
+
+        // Calculate total canvas offset for this frame
+        float slideY = (1.0f - canvas.slideAnim) * panelHeight;
+        canvas.currentTotalOffset = glm::vec2(canvas.shakeOffset.x, slideY + canvas.shakeOffset.y);
+
         int fps = static_cast<int>(1.0f / (deltaTime > 0.0001f ? deltaTime : 0.016f));
         std::string titleStr = "Dream of a Witch | Speed: " + std::to_string(horizSpeed).substr(0, 4) + 
-                               " m/s | FPS: " + std::to_string(fps) + 
-                               (player.isCrouching ? " [CROUCHING]" : "");
+                               " m/s | Slate: " + (canvas.isOpen ? "OPEN" : "CLOSED") + 
+                               " | FPS: " + std::to_string(fps);
         glfwSetWindowTitle(window, titleStr.c_str());
 
-        // Rendering
+        // --- 1. RENDER 3D SCENE ---
+        glEnable(GL_DEPTH_TEST);
         glClearColor(0.1f, 0.12f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glUseProgram(shaderProgram);
+        glUseProgram(shader3D);
 
-        // Camera Position based on Player state
         glm::vec3 cameraPos = player.position + glm::vec3(0.0f, player.cameraHeight, 0.0f);
+        glm::mat4 projection3D = glm::perspective(glm::radians(65.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 150.0f);
+        glm::mat4 view3D = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
+        glm::mat4 model3D = glm::mat4(1.0f);
 
-        glm::mat4 projection = glm::perspective(glm::radians(65.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 150.0f);
-        glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
-        glm::mat4 model = glm::mat4(1.0f);
+        glUniformMatrix4fv(glGetUniformLocation(shader3D, "model"), 1, GL_FALSE, glm::value_ptr(model3D));
+        glUniformMatrix4fv(glGetUniformLocation(shader3D, "view"), 1, GL_FALSE, glm::value_ptr(view3D));
+        glUniformMatrix4fv(glGetUniformLocation(shader3D, "projection"), 1, GL_FALSE, glm::value_ptr(projection3D));
 
-        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(model));
-        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
-
-        glBindVertexArray(VAO);
+        glBindVertexArray(VAO3D);
         glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(gridVertices.size() / 6));
+
+        // --- 2. RENDER 2D UI SLATE & STROKES ---
+        if (canvas.slideAnim > 0.001f) {
+            glDisable(GL_DEPTH_TEST);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+            glUseProgram(shaderUI);
+
+            glm::mat4 orthoProj = glm::ortho(0.0f, (float)SCR_WIDTH, (float)SCR_HEIGHT, 0.0f, -1.0f, 1.0f);
+            glUniformMatrix4fv(glGetUniformLocation(shaderUI, "projection"), 1, GL_FALSE, glm::value_ptr(orthoProj));
+
+            glUniform2fv(glGetUniformLocation(shaderUI, "offset"), 1, glm::value_ptr(canvas.currentTotalOffset));
+
+            glBindVertexArray(VAOUI);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+
+            std::vector<float> lineData;
+            auto addStrokeToBuffer = [&](const std::vector<glm::vec2>& stroke) {
+                if (stroke.size() < 2) return;
+                for (size_t i = 0; i < stroke.size() - 1; ++i) {
+                    lineData.push_back(stroke[i].x);
+                    lineData.push_back(stroke[i].y);
+                    lineData.push_back(0.1f); lineData.push_back(0.1f); lineData.push_back(0.1f); lineData.push_back(1.0f);
+
+                    lineData.push_back(stroke[i+1].x);
+                    lineData.push_back(stroke[i+1].y);
+                    lineData.push_back(0.1f); lineData.push_back(0.1f); lineData.push_back(0.1f); lineData.push_back(1.0f);
+                }
+            };
+
+            for (const auto& stroke : canvas.strokes) {
+                addStrokeToBuffer(stroke);
+            }
+            addStrokeToBuffer(canvas.currentStroke);
+
+            if (!lineData.empty()) {
+                glLineWidth(4.0f);
+                glBindVertexArray(VAOLines);
+                glBindBuffer(GL_ARRAY_BUFFER, VBOLines);
+                glBufferData(GL_ARRAY_BUFFER, lineData.size() * sizeof(float), lineData.data(), GL_DYNAMIC_DRAW);
+                glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(lineData.size() / 6));
+            }
+        }
 
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
-    glDeleteVertexArrays(1, &VAO);
-    glDeleteBuffers(1, &VBO);
-    glDeleteProgram(shaderProgram);
+    glDeleteVertexArrays(1, &VAO3D);
+    glDeleteBuffers(1, &VBO3D);
+    glDeleteVertexArrays(1, &VAOUI);
+    glDeleteBuffers(1, &VBOUI);
+    glDeleteVertexArrays(1, &VAOLines);
+    glDeleteBuffers(1, &VBOLines);
+    glDeleteProgram(shader3D);
+    glDeleteProgram(shaderUI);
 
     glfwDestroyWindow(window);
     glfwTerminate();

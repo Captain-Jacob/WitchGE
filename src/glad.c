@@ -3,6 +3,8 @@
 PFNGLCLEARPROC glad_glClear = NULL;
 PFNGLCLEARCOLORPROC glad_glClearColor = NULL;
 PFNGLENABLEPROC glad_glEnable = NULL;
+PFNGLDISABLEPROC glad_glDisable = NULL;
+PFNGLBLENDFUNCPROC glad_glBlendFunc = NULL;
 PFNGLVIEWPORTPROC glad_glViewport = NULL;
 PFNGLCREATESHADERPROC glad_glCreateShader = NULL;
 PFNGLSHADERSOURCEPROC glad_glShaderSource = NULL;
@@ -26,6 +28,8 @@ PFNGLENABLEVERTEXATTRIBARRAYPROC glad_glEnableVertexAttribArray = NULL;
 PFNGLDRAWARRAYSPROC glad_glDrawArrays = NULL;
 PFNGLGETUNIFORMLOCATIONPROC glad_glGetUniformLocation = NULL;
 PFNGLUNIFORMMATRIX4FVPROC glad_glUniformMatrix4fv = NULL;
+PFNGLUNIFORM2FVPROC glad_glUniform2fv = NULL;
+PFNGLLINEWIDTHPROC glad_glLineWidth = NULL;
 PFNGLDELETEVERTEXARRAYSPROC glad_glDeleteVertexArrays = NULL;
 PFNGLDELETEBUFFERSPROC glad_glDeleteBuffers = NULL;
 PFNGLDELETEPROGRAMPROC glad_glDeleteProgram = NULL;
@@ -34,6 +38,8 @@ int gladLoadGLLoader(GLADloadproc load) {
     glad_glClear = (PFNGLCLEARPROC)load("glClear");
     glad_glClearColor = (PFNGLCLEARCOLORPROC)load("glClearColor");
     glad_glEnable = (PFNGLENABLEPROC)load("glEnable");
+    glad_glDisable = (PFNGLDISABLEPROC)load("glDisable");
+    glad_glBlendFunc = (PFNGLBLENDFUNCPROC)load("glBlendFunc");
     glad_glViewport = (PFNGLVIEWPORTPROC)load("glViewport");
     glad_glCreateShader = (PFNGLCREATESHADERPROC)load("glCreateShader");
     glad_glShaderSource = (PFNGLSHADERSOURCEPROC)load("glShaderSource");
@@ -57,6 +63,8 @@ int gladLoadGLLoader(GLADloadproc load) {
     glad_glDrawArrays = (PFNGLDRAWARRAYSPROC)load("glDrawArrays");
     glad_glGetUniformLocation = (PFNGLGETUNIFORMLOCATIONPROC)load("glGetUniformLocation");
     glad_glUniformMatrix4fv = (PFNGLUNIFORMMATRIX4FVPROC)load("glUniformMatrix4fv");
+    glad_glUniform2fv = (PFNGLUNIFORM2FVPROC)load("glUniform2fv");
+    glad_glLineWidth = (PFNGLLINEWIDTHPROC)load("glLineWidth");
     glad_glDeleteVertexArrays = (PFNGLDELETEVERTEXARRAYSPROC)load("glDeleteVertexArrays");
     glad_glDeleteBuffers = (PFNGLDELETEBUFFERSPROC)load("glDeleteBuffers");
     glad_glDeleteProgram = (PFNGLDELETEPROGRAMPROC)load("glDeleteProgram");
