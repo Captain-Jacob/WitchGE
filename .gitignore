@@ -15,3 +15,6 @@ out/
 Thumbs.db
 Desktop.ini
 "@
+gameengine.md
+goal.md
+setup_phase1_engine.py
