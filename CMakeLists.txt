@@ -38,7 +38,6 @@ add_executable(${PROJECT_NAME}
     src/glad.c
 )
 
-# GLFW_INCLUDE_NONE sadece bizim hedefimize özel eklenir (GLFW derlemesini bozmaz)
 target_compile_definitions(${PROJECT_NAME} PRIVATE GLFW_INCLUDE_NONE)
 
 target_include_directories(${PROJECT_NAME} PRIVATE 

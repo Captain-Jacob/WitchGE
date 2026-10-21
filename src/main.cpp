@@ -9,11 +9,32 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <algorithm>
+#include <string>
 
 const unsigned int SCR_WIDTH = 1280;
 const unsigned int SCR_HEIGHT = 720;
 
-glm::vec3 cameraPos   = glm::vec3(0.0f, 2.0f, 8.0f);
+// --- Player & Movement State Machine ---
+struct Player {
+    glm::vec3 position = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3 velocity = glm::vec3(0.0f, 0.0f, 0.0f);
+    
+    float cameraHeight = 1.6f;       // Smoothly lerps during crouch
+    bool isGrounded = true;
+    bool isCrouching = false;
+    
+    // Physics Parameters
+    const float MAX_GROUND_SPEED = 8.0f;
+    const float MAX_CROUCH_SPEED = 4.0f;
+    const float GROUND_ACCEL     = 14.0f;
+    const float GROUND_FRICTION  = 6.0f;
+    const float AIR_ACCEL        = 45.0f;  // Quake/Source strafe accel
+    const float JUMP_IMPULSE     = 6.5f;
+    const float GRAVITY          = 20.0f;
+} player;
+
+// --- Camera Look State ---
 glm::vec3 cameraFront = glm::vec3(0.0f, -0.2f, -1.0f);
 glm::vec3 cameraUp    = glm::vec3(0.0f, 1.0f, 0.0f);
 
@@ -23,9 +44,11 @@ float lastX =  SCR_WIDTH / 2.0f;
 float lastY =  SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
 
+// Timing
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
+// Callbacks
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
 }
@@ -62,19 +85,81 @@ void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
     cameraFront = glm::normalize(front);
 }
 
-void processInput(GLFWwindow *window) {
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, true);
+// --- Movement Physics Helper Functions ---
+void ApplyFriction(float dt) {
+    float speed = glm::length(glm::vec2(player.velocity.x, player.velocity.z));
+    if (speed < 0.0001f) {
+        player.velocity.x = 0.0f;
+        player.velocity.z = 0.0f;
+        return;
+    }
+    float drop = speed * player.GROUND_FRICTION * dt;
+    float newSpeed = std::max(0.0f, speed - drop);
+    newSpeed /= speed;
+    player.velocity.x *= newSpeed;
+    player.velocity.z *= newSpeed;
+}
 
-    float cameraSpeed = static_cast<float>(4.5f * deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        cameraPos += cameraSpeed * cameraFront;
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        cameraPos -= cameraSpeed * cameraFront;
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
+void Accelerate(glm::vec3 wishdir, float wishspeed, float accel, float dt) {
+    float currentspeed = glm::dot(player.velocity, wishdir);
+    float addspeed = wishspeed - currentspeed;
+    if (addspeed <= 0) return;
+    float accelspeed = accel * dt * wishspeed;
+    if (accelspeed > addspeed) accelspeed = addspeed;
+    player.velocity += wishdir * accelspeed;
+}
+
+void UpdatePlayerPhysics(GLFWwindow* window, float dt) {
+    // 1. Crouch State (C Key)
+    player.isCrouching = (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS);
+    float targetCameraHeight = player.isCrouching ? 0.8f : 1.6f;
+    player.cameraHeight = glm::mix(player.cameraHeight, targetCameraHeight, 12.0f * dt);
+
+    // 2. Input Wish Direction Matrix
+    glm::vec3 forward = glm::normalize(glm::vec3(cameraFront.x, 0.0f, cameraFront.z));
+    glm::vec3 right = glm::normalize(glm::cross(forward, cameraUp));
+    
+    glm::vec3 wishdir(0.0f);
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) wishdir += forward;
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) wishdir -= forward;
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) wishdir += right;
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) wishdir -= right;
+
+    if (glm::length(wishdir) > 0.001f) {
+        wishdir = glm::normalize(wishdir);
+    }
+
+    float targetMaxSpeed = player.isCrouching ? player.MAX_CROUCH_SPEED : player.MAX_GROUND_SPEED;
+
+    // 3. Ground vs Air Physics Pipeline
+    if (player.isGrounded) {
+        ApplyFriction(dt);
+        if (glm::length(wishdir) > 0.001f) {
+            Accelerate(wishdir, targetMaxSpeed, player.GROUND_ACCEL, dt);
+        }
+        
+        // Jump Impulse
+        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+            player.velocity.y = player.JUMP_IMPULSE;
+            player.isGrounded = false;
+        }
+    } else {
+        // Air Movement (Air Acceleration allows Bunny Hopping speed gain)
+        if (glm::length(wishdir) > 0.001f) {
+            Accelerate(wishdir, targetMaxSpeed, player.AIR_ACCEL, dt);
+        }
+        // Apply Gravity
+        player.velocity.y -= player.GRAVITY * dt;
+    }
+
+    // 4. Integrate Position & Ground Collision
+    player.position += player.velocity * dt;
+
+    if (player.position.y <= 0.0f) {
+        player.position.y = 0.0f;
+        player.velocity.y = 0.0f;
+        player.isGrounded = true;
+    }
 }
 
 std::string loadShaderSource(const char* filepath) {
@@ -138,7 +223,7 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Dream of a Witch - Custom Engine", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Dream of a Witch - WitchEngine", NULL, NULL);
     if (!window) {
         std::cerr << "Failed to create GLFW Window" << std::endl;
         glfwTerminate();
@@ -159,8 +244,9 @@ int main() {
 
     GLuint shaderProgram = createShaderProgram("shaders/vertex.glsl", "shaders/fragment.glsl");
 
+    // 3D Grid Floor
     std::vector<float> gridVertices;
-    float gridSize = 40.0f;
+    float gridSize = 60.0f;
     float gridStep = 2.0f;
 
     for (float i = -gridSize; i <= gridSize; i += gridStep) {
@@ -185,8 +271,12 @@ int main() {
     glEnableVertexAttribArray(1);
 
     std::cout << "==================================================" << std::endl;
-    std::cout << "🚀 Custom Engine Phase 1 Initialized!" << std::endl;
-    std::cout << "Controls: WASD to Move, Mouse to Look Around, ESC to Exit" << std::endl;
+    std::cout << "🚀 Phase 2 Initialized: 3D Bunny Hop & Crouch Engine" << std::endl;
+    std::cout << "Controls:" << std::endl;
+    std::cout << "  - WASD : Move / Strafe" << std::endl;
+    std::cout << "  - SPACE : Jump (Time jumps while turning to Bunny Hop!)" << std::endl;
+    std::cout << "  - C     : Crouch" << std::endl;
+    std::cout << "  - ESC   : Exit" << std::endl;
     std::cout << "==================================================" << std::endl;
 
     while (!glfwWindowShouldClose(window)) {
@@ -194,14 +284,30 @@ int main() {
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
-        processInput(window);
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            glfwSetWindowShouldClose(window, true);
 
+        // Update Physics
+        UpdatePlayerPhysics(window, deltaTime);
+
+        // Update Title Bar with Horizontal Speed & FPS Metrics
+        float horizSpeed = glm::length(glm::vec2(player.velocity.x, player.velocity.z));
+        int fps = static_cast<int>(1.0f / (deltaTime > 0.0001f ? deltaTime : 0.016f));
+        std::string titleStr = "Dream of a Witch | Speed: " + std::to_string(horizSpeed).substr(0, 4) + 
+                               " m/s | FPS: " + std::to_string(fps) + 
+                               (player.isCrouching ? " [CROUCHING]" : "");
+        glfwSetWindowTitle(window, titleStr.c_str());
+
+        // Rendering
         glClearColor(0.1f, 0.12f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glUseProgram(shaderProgram);
 
-        glm::mat4 projection = glm::perspective(glm::radians(60.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+        // Camera Position based on Player state
+        glm::vec3 cameraPos = player.position + glm::vec3(0.0f, player.cameraHeight, 0.0f);
+
+        glm::mat4 projection = glm::perspective(glm::radians(65.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 150.0f);
         glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
         glm::mat4 model = glm::mat4(1.0f);
 
