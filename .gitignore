@@ -1,0 +1,17 @@
+Set-Content -Path .gitignore -Value @"
+# Build & Binary directories
+build/
+bin/
+out/
+.cache/
+
+# IDE & Editor files
+.vscode/
+.vs/
+*.user
+*.suo
+
+# Operating System files
+Thumbs.db
+Desktop.ini
+"@
