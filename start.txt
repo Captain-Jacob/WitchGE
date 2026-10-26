@@ -1,0 +1,4 @@
+cmake --build build
+
+# 3. Launch engine
+.\build\WitchEngine.exe

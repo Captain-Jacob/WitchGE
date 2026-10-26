@@ -4,6 +4,7 @@ build/
 bin/
 out/
 .cache/
+model/
 
 # IDE & Editor files
 .vscode/

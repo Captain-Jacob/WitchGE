@@ -52,3 +52,26 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders
     $<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders
 )
+
+
+# Auto-injected by Butterfly DevTool for ONNX Runtime integration
+find_package(ONNXRuntime QUIET)
+if(ONNXRuntime_FOUND)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ONNXRuntime::ONNXRuntime)
+endif()
+
+
+# --- ONNX Runtime C++ Integration ---
+if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/onnxruntime")
+    include_directories("${CMAKE_SOURCE_DIR}/third_party/onnxruntime/include")
+    link_directories("${CMAKE_SOURCE_DIR}/third_party/onnxruntime/lib")
+endif()
+
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/onnxruntime/lib/onnxruntime.lib")
+    target_link_libraries(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/third_party/onnxruntime/lib/onnxruntime.lib")
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/third_party/onnxruntime/lib/onnxruntime.dll"
+        $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+endif()
