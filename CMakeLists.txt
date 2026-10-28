@@ -1,77 +1,54 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.16)
+project(WitchEngine CXX C)
 
-set(CMAKE_TLS_VERIFY OFF CACHE BOOL "" FORCE)
-
-project(WitchEngine C CXX)
-
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Yerel Header Dizinleri (Config, Player, glad.h, KHR)
+include_directories(include)
+
+# ONNX Runtime Başlık Dosyaları
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/include")
+    include_directories(third_party/onnxruntime/include)
+    link_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib)
+endif()
+
+# OpenGL
+find_package(OpenGL REQUIRED)
+
+# 1. GLFW Otomatik İndirme
 include(FetchContent)
-
-# GLFW Setup
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
-
 FetchContent_Declare(
     glfw
-    URL https://github.com/glfw/glfw/archive/refs/tags/3.4.zip
-    TLS_VERIFY OFF
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG        3.3.8
 )
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(glfw)
 
-# GLM Header-Only Setup
-set(GLM_BUILD_LIBRARY OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-
+# 2. GLM Otomatik İndirme
 FetchContent_Declare(
     glm
-    URL https://github.com/g-truc/glm/archive/refs/tags/1.0.1.zip
-    TLS_VERIFY OFF
+    GIT_REPOSITORY https://github.com/g-truc/glm.git
+    GIT_TAG        1.0.1
 )
 FetchContent_MakeAvailable(glm)
 
-add_executable(${PROJECT_NAME}
-    src/main.cpp
-    src/glad.c
-)
+# Kaynak Dosyaları Topla
+file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.c")
 
-target_compile_definitions(${PROJECT_NAME} PRIVATE GLFW_INCLUDE_NONE)
+# Çalıştırılabilir Hedefi Oluştur
+add_executable(WitchEngine ${SOURCES})
 
-target_include_directories(${PROJECT_NAME} PRIVATE 
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${glm_SOURCE_DIR}
-)
+# GLFW'nin gl.h'ı yüklemesini SADECE bizim projemiz için engelle (GLFW'nin kendi derlemesini etkilemez)
+target_compile_definitions(WitchEngine PRIVATE GLFW_INCLUDE_NONE)
 
-target_link_libraries(${PROJECT_NAME} PRIVATE glfw)
+# Kütüphaneleri Bağla
+target_link_libraries(WitchEngine PRIVATE OpenGL::GL glfw glm::glm)
 
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_CURRENT_SOURCE_DIR}/shaders
-    $<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders
-)
-
-
-# Auto-injected by Butterfly DevTool for ONNX Runtime integration
-find_package(ONNXRuntime QUIET)
-if(ONNXRuntime_FOUND)
-    target_link_libraries(${PROJECT_NAME} PRIVATE ONNXRuntime::ONNXRuntime)
-endif()
-
-
-# --- ONNX Runtime C++ Integration ---
-if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/onnxruntime")
-    include_directories("${CMAKE_SOURCE_DIR}/third_party/onnxruntime/include")
-    link_directories("${CMAKE_SOURCE_DIR}/third_party/onnxruntime/lib")
-endif()
-
-
-if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/onnxruntime/lib/onnxruntime.lib")
-    target_link_libraries(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/third_party/onnxruntime/lib/onnxruntime.lib")
-    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/third_party/onnxruntime/lib/onnxruntime.dll"
-        $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+# ONNX Runtime mevcutsa bağla
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib")
+    target_link_libraries(WitchEngine PRIVATE onnxruntime)
 endif()
