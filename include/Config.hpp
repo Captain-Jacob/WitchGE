@@ -12,4 +12,4 @@ const std::vector<std::string> CLASS_LABELS = {
     "air", "dirrection", "earth", "fire", "temp", "unknown", "water"
 };
 
-#endif // CONFIG_HPP
+#endif // we gonna see either its work or fucked.

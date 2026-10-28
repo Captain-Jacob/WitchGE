@@ -5,6 +5,7 @@ bin/
 out/
 .cache/
 model/
+third_party/
 
 # IDE & Editor files
 .vscode/
